@@ -1,0 +1,6 @@
+# @system codegen
+# @status generated
+# @edit change codegen_output 'all-repos-bunfig', then regenerate
+
+[install]
+linker = "hoisted"
