@@ -1,0 +1,36 @@
+// @system codegen
+// @status generated
+// @edit derived per-repo from source tree + root package.json existence — regenerate via scala-tools codegen run --output repo-tsconfig
+{
+	"compilerOptions": {
+		"target": "ESNext",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"jsx": "react-jsx",
+		"esModuleInterop": true,
+		"strict": true,
+		"skipLibCheck": true,
+		"resolveJsonModule": true,
+		"allowImportingTsExtensions": true,
+		"noEmit": true,
+		"noImplicitOverride": true,
+		"noFallthroughCasesInSwitch": true,
+		"verbatimModuleSyntax": true,
+		"types": [
+			"bun-types"
+		]
+	},
+	"include": [
+		"src/**/*.ts",
+		"src/**/*.tsx"
+	],
+	"exclude": [
+		"node_modules",
+		"node_modules.*",
+		".bun-tmp",
+		"dist",
+		"build",
+		"**/fixtures",
+		"**/*.fixtures"
+	]
+}
