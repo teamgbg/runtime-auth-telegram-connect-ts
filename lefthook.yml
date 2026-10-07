@@ -1,0 +1,139 @@
+# @system codegen
+# @status generated
+# @edit change codegen_output 'all-repos-lefthook', then regenerate
+#
+# Lefthook hook orchestration — the shared shape every repo carries.
+# The hook TRANSPORT lives ONCE, in guard-hook-transport, and this file
+# fetches the version it pins: lefthook's `remotes` clones the transport at
+# the ref below into .git/info/lefthook-remotes/ and merges the config that
+# names there. The stages themselves come from that pinned copy, so an
+# uncommitted edit to the transport's working tree cannot reach this repo's
+# push (measured 2026-09-28: the previous shape exec'd
+# `bash ../guard-hook-transport/hooks/pre-push` from the SIBLING WORKING
+# TREE, so one in-progress hook edit was live fleet-wide — a half-written
+# pre-push broke 226 repos' pushes at once).
+# Lefthook does natively what the old per-repo layer hand-wrote: install
+# (assert_lefthook_installed), file sets (scripts fire unconditionally —
+# commands skip on tag-only pushes), skips (skip: run:), failure text
+# (fail_text).
+
+assert_lefthook_installed: true
+# 2.1.15 is the floor — required and installed (host upgraded 2.1.14 -> 2.1.15
+# at 06:09 on 2026-10-01): it is the release carrying upstream 07ce565 /
+# #1486, the slash sanitisation the coordinate pin below depends on. The floor
+# and the `ref:` below move as ONE change — see the pin's block for why they
+# cannot move apart (moved together 2026-10-01).
+min_version: 2.1.15
+
+# THE PIN: an immutable versioned ref of the transport, never a branch. A
+# branch ref moves under a fleet-wide push; a release tag names bytes, and the
+# bytes are what the tag was minted over. `refetch: false` because a moving
+# ref is the defect being closed — the copy installs once and only a
+# deliberate pin bump changes it: an edit to THIS LITERAL (the pin is pkl
+# source, there is no registry row behind it), shipped in an engine release,
+# then re-rendered into every repo's lefthook.yml by the fleet regen.
+#
+# THE REF MUST NOT CONTAIN A SLASH, and the reason is an upstream lefthook
+# defect, not tag taste. Proven in lefthook's own source, not inferred.
+#
+# `remotes` are cloned by internal/command/install.go:syncRemote, which derives
+# the directory VERBATIM: `directoryName := git.RemoteDirectoryName(url, ref)`
+# then `remotePath := filepath.Join(remotesPath, directoryName)`. A slash inside
+# the ref therefore MANUFACTURES A DIRECTORY LEVEL: the git-family coordinate
+# for guard-hook-transport 0.1.5 (a `git` segment, a slash, then the package
+# name and version) does not land at top level under its own name — it lands
+# under a `guard-hook-transport-git` parent, one level deeper than the sweep
+# below can see.
+#
+# The same file's `syncHooks` then destroys it, every run. The sweep records what
+# it expects to keep:
+#     fetchedRemotes[l.repo.RemoteFolder(url, ref)] = struct{}{}   // the NESTED path
+# and compares it against what a directory listing can produce:
+#     entries, _ := afero.ReadDir(l.fs, l.repo.RemotesFolder())      // TOP-LEVEL names
+#     remotePath := filepath.Join(RemotesFolder(), entry.Name())    // .../guard-hook-transport-git
+#     if _, ok := fetchedRemotes[remotePath]; !ok { RemoveAll(remotePath) }
+# A nested path can never equal a top-level name, so the branch is ALWAYS taken
+# and the sweep deletes the PARENT directory it just cloned into. ReadDir does not
+# descend, so it never sees the copy that does exist one level down.
+#
+# The sweep is NOT gated on a refetch having happened — it runs whenever
+# `len(fetchedRemotes) > 0`, which is true even when shouldRefetch() is false and
+# nothing was fetched. That is why `refetch: false` cannot rescue a slashed ref,
+# and it is the upstream truth behind the three-way measurement below.
+#
+# Measured 2026-10-01, one variable at a time in throwaway repos, lefthook
+# v2.1.14, and this is why the earlier reading was wrong:
+#   slashed git-family ref @0.1.5, refetch false -> fails EVERY run
+#   slashed git-family ref @0.1.5, refetch true  -> run 1 passes, 2+ fail
+#   flat ref @0.1.4,              refetch false -> copy PERSISTS, the
+#     script resolves and RUNS (the daemon answered with a real verdict, which
+#     is only reachable if the script executed)
+# The supplier's docs agree on the root requirement without naming the bug: a
+# remote config's script `source_dir` must sit in the ROOT of the remote
+# repository (lefthook docs/configuration/remotes.md), which a nested fetch path
+# cannot satisfy.
+#
+# CONSEQUENCE FOR THE END STATE — 0.1.4 IS AN UNBLOCK, NOT A DESTINATION. The
+# release-publisher mints the git family as a `git` segment, a slash, then
+# package and version (release_coordinate.rs:83),
+# a bare name is CoordinateRefusal::BareName, and even the verb's own prescribed
+# next-version remedy yields a still-slashed 0.1.6. So no flat coordinate tag is
+# mintable for any future version, and pinning flat at 0.1.4 freezes the transport
+# at 0.1.4's bytes (a deliberate content downgrade from 0.1.5's compile-gate and
+# daemon-address fixes) while every later transport release arrives under a ref
+# this file cannot name. No `remotes` shape fixes that: the defect is upstream's
+# path comparison, so pre-seeding after the sweep and a door-side fetch both race a
+# sweep that runs on every invocation.
+#
+# THE DEFECT IS FIXED UPSTREAM — v2.1.15 IS THE FLOOR, NOT A PREFERENCE. Read
+# 2026-10-01: the proof above is a v2.1.14 reading, and v2.1.14 is what this host
+# runs (`lefthook version` -> 2.1.14, /usr/bin/lefthook). The same function at
+# v2.1.14 (sha eca344cb) is `name = name + "-" + ref` — the ref appended RAW. At
+# upstream HEAD (sha 91407e53) it sanitises, and the fix is a named commit:
+#   07ce565bcc73465bc18fb36561b935ee2a53eab6
+#   "fix: sanitize slashes in remote ref when building the checkout dir name (#1486)"
+#   2026-09-23, first released in v2.1.15 (2026-09-29).
+# It escapes literal "-" to "--" and maps "/" to "-", so the ref is ONE path
+# component and the nested-vs-top-level comparison can hold. Upstream's own
+# comment names this exact failure ("causing the remote to be treated as stale
+# (and re-cloned) on every run"). The doubling is deliberate: without it
+# "feat/a-b" and "feat/a/b" would alias onto one directory, letting one ref's
+# checkout silently overwrite the other's.
+#
+# SO THE PIN SHAPE WAS NEVER THE PROBLEM — THE SUPPLIER VERSION IS. Once lefthook
+# is >= v2.1.15 the ordinary git-family coordinate — a `git` segment, a slash,
+# then package name and version — is serviceable for any version and the flat
+# workaround retires; there is no bespoke ref shape to design. `min_version`
+# above is the machine-checked gate for exactly that, and
+# the two changes are ONE change: raising the floor to 2.1.15 and reverting the
+# ref to the coordinate must land together, because a 2.1.14 host handed a
+# 2.1.15 floor refuses every run and a 2.1.15 host left on the flat ref keeps
+# working but keeps 0.1.4's bytes. Until the binary moves, 0.1.4 keeps every repo
+# committing; the acceptance test for any replacement is the one below, never
+# "the commit went green" (a missing script never reaches a verdict, so only a
+# real daemon verdict proves the copy resolved).
+remotes:
+  - git_url: https://github.com/teamgbg/guard-hook-transport.git
+    ref: git/guard-hook-transport@0.1.14
+    refetch: false
+    configs:
+      - hooks-remote.yml
+
+# THE DOOR, local on purpose. Lefthook's remote fetch is fail-OPEN (measured
+# 2026-09-28): a failed fetch logs and continues, and the pinned config's
+# scripts then resolve to nothing, so every pre-push rule is skipped in
+# silence — the exact defect this pin exists to close, arriving by the other
+# door. So the stage that REFUSES an uninstalled pin is declared HERE, in the
+# file that exists whether or not the remote did, and it is a SCRIPT (not a
+# command) because a command is skipped on a tag-only push (measured
+# 2026-09-27) — and a tag-only push is a publish push, the one that must not
+# sail through unguarded.
+pre-push:
+  scripts:
+    "pinned-hook-copy":
+      runner: bash
+      # Same master-switch string as the transport's own stages: the switch
+      # turns the whole guard transport off, this door included.
+      skip:
+        - run: 'cache="${XDG_RUNTIME_DIR:-/tmp}/scala-guard-switch-state"; if [ -f "$cache" ]; then value="$(cat "$cache")"; if [ "$value" = "off" ] || printf "%s\n" "$value" | grep -qx "pre-push=0"; then exit 0; fi; fi; scala-tools master-switch is-off pre-push'
+      fail_text: the pinned guard-hook-transport copy is not installed — this push ran NO guard (run `lefthook install` here; never `--no-verify` past this)
