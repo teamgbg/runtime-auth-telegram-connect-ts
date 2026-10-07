@@ -1,0 +1,18 @@
+{
+	"name": "@teamscala/runtime-auth-telegram-connect",
+	"_generated": {
+		"system": "runtime-auth-telegram-connect",
+		"status": "generated",
+		"edit": "edit src/ — dependencies and exports derive from imports; everything else preserved"
+	},
+	"dependencies": {
+		"@teamscala/logger": "*",
+		"@teamscala/runtime-auth-flow-config": "*",
+		"@teamscala/runtime-messaging-service-rpc": "*",
+		"qrcode": "*"
+	},
+	"exports": {
+		"./telegram-flow": "./src/telegram-flow.ts",
+		"./telegram-flow.ts": "./src/telegram-flow.ts"
+	}
+}
